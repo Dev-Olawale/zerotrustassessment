@@ -1,0 +1,46 @@
+# Deploy the Docusaurus site to Azure Static Web Apps from the dev branch.
+# Create an Azure DevOps secret variable named AZURE_STATIC_WEB_APPS_API_TOKEN
+# with the deployment token from the Azure Static Web App resource before running.
+
+trigger:
+  branches:
+    include:
+    - dev
+  paths:
+    include:
+    - src/react/**
+    - .azure-pipelines/azure-static-webapp-dev.yml
+
+pr: none
+
+pool:
+  name: synergy
+  demands:
+  - Agent.Name -equals azagent2
+
+steps:
+- checkout: self
+
+- task: NodeTool@0
+  displayName: Use Node.js 20
+  inputs:
+    versionSpec: '20.x'
+
+- script: npm ci
+  displayName: Install site dependencies
+  workingDirectory: src/react
+
+- script: npm run build
+  displayName: Build Docusaurus static site
+  workingDirectory: src/react
+  env:
+    BASE_URL: '/'
+
+- task: AzureStaticWebApp@0
+  displayName: Deploy to Azure Static Web Apps
+  inputs:
+    app_location: src/react/build
+    output_location: ''
+    skip_app_build: true
+    skip_api_build: true
+    azure_static_web_apps_api_token: $(AZURE_STATIC_WEB_APPS_API_TOKEN)

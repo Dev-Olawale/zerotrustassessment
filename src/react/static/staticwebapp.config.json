@@ -1,0 +1,24 @@
+{
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": [
+      "/img/*",
+      "/demo/*",
+      "/*.{css,scss,js,png,gif,ico,jpg,svg,json,txt,xml,woff,woff2}"
+    ]
+  },
+  "routes": [
+    {
+      "route": "/reports/*",
+      "allowedRoles": [
+        "authenticated"
+      ]
+    }
+  ],
+  "responseOverrides": {
+    "401": {
+      "redirect": "/.auth/login/aad?post_login_redirect_uri=.referrer",
+      "statusCode": 302
+    }
+  }
+}

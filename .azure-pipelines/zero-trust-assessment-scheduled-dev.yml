@@ -1,0 +1,107 @@
+# Scheduled Zero Trust Assessment run for the dev branch.
+# This pipeline is designed for unattended Azure DevOps execution on the
+# self-hosted agent pool "synergy" and agent "azagent2".
+#
+# Required Azure DevOps setup:
+# - Variable group: zta-assessment-dev
+# - Secure file: PFX certificate for the Zero Trust Assessment app registration
+# - Pipeline permission granted to use that secure file
+#
+# Required variables in zta-assessment-dev:
+# - ZTA_TENANT_ID
+# - ZTA_CLIENT_ID
+# - ZTA_CERT_SECURE_FILE
+# - ZTA_CERT_PASSWORD       (secret)
+# - ZTA_CERT_THUMBPRINT
+# - ZTA_REPORT_DAYS         (example: 7)
+# - ZTA_SIGNIN_QUERY_MINUTES (example: 30)
+
+trigger: none
+pr: none
+
+schedules:
+- cron: '0 1 * * Mon'
+  displayName: Weekly Zero Trust Assessment
+  branches:
+    include:
+    - dev
+  always: true
+  batch: true
+
+pool:
+  name: synergy
+  demands:
+  - Agent.Name -equals azagent2
+
+variables:
+- group: zta-assessment-dev
+
+steps:
+- checkout: self
+
+- task: DownloadSecureFile@1
+  name: ztaCertificate
+  displayName: Download assessment certificate
+  inputs:
+    secureFile: $(ZTA_CERT_SECURE_FILE)
+
+- pwsh: |
+    $ErrorActionPreference = 'Stop'
+
+    if (-not (Get-Command Install-PSResource -ErrorAction SilentlyContinue)) {
+      Install-Module Microsoft.PowerShell.PSResourceGet -Scope CurrentUser -Force -AllowClobber
+    }
+
+    Install-PSResource -Name ZeroTrustAssessment -Scope CurrentUser -TrustRepository
+    Import-Module ZeroTrustAssessment -Force
+
+    $certificatePassword = ConvertTo-SecureString "$(ZTA_CERT_PASSWORD)" -AsPlainText -Force
+    $importedCertificate = $null
+
+    try {
+      $importedCertificate = Import-PfxCertificate `
+        -FilePath "$(ztaCertificate.secureFilePath)" `
+        -CertStoreLocation Cert:\CurrentUser\My `
+        -Password $certificatePassword
+
+      $certificate = Get-ChildItem Cert:\CurrentUser\My |
+        Where-Object Thumbprint -eq "$(ZTA_CERT_THUMBPRINT)" |
+        Select-Object -First 1
+
+      if (-not $certificate) {
+        throw "Certificate with thumbprint $(ZTA_CERT_THUMBPRINT) was not found in Cert:\CurrentUser\My."
+      }
+
+      $reportPath = Join-Path "$(Build.ArtifactStagingDirectory)" "ztreport"
+      New-Item -ItemType Directory -Force -Path $reportPath | Out-Null
+
+      Connect-ZtAssessment `
+        -TenantId "$(ZTA_TENANT_ID)" `
+        -ClientId "$(ZTA_CLIENT_ID)" `
+        -Certificate $certificate `
+        -Service Graph,Azure `
+        -Force
+
+      Invoke-ZtAssessment `
+        -Path $reportPath `
+        -Pillar Identity `
+        -Days "$(ZTA_REPORT_DAYS)" `
+        -MaximumSignInLogQueryTime "$(ZTA_SIGNIN_QUERY_MINUTES)" `
+        -NoBrowser `
+        -DisableTelemetry `
+        -ExportLog
+    }
+    finally {
+      foreach ($certToRemove in @($importedCertificate)) {
+        if ($certToRemove.Thumbprint) {
+          Remove-Item -LiteralPath "Cert:\CurrentUser\My\$($certToRemove.Thumbprint)" -Force -ErrorAction SilentlyContinue
+        }
+      }
+    }
+  displayName: Run Zero Trust Assessment
+
+- task: PublishPipelineArtifact@1
+  displayName: Publish assessment report artifact
+  inputs:
+    targetPath: $(Build.ArtifactStagingDirectory)\ztreport
+    artifact: zero-trust-assessment-report
