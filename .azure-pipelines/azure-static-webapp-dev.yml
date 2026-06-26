@@ -35,6 +35,7 @@ steps:
   workingDirectory: src/react
   env:
     BASE_URL: '/'
+    SITE_URL: $(SWA_SITE_URL)
 
 - task: AzureStaticWebApp@0
   displayName: Deploy to Azure Static Web Apps

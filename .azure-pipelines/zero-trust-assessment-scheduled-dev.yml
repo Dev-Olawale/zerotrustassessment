@@ -52,7 +52,7 @@ steps:
       Install-Module Microsoft.PowerShell.PSResourceGet -Scope CurrentUser -Force -AllowClobber
     }
 
-    Install-PSResource -Name ZeroTrustAssessment -Scope CurrentUser -TrustRepository
+    Install-PSResource -Name ZeroTrustAssessment -Scope CurrentUser -Repository PSGallery -TrustRepository
     Import-Module ZeroTrustAssessment -Force
 
     $certificatePassword = ConvertTo-SecureString "$(ZTA_CERT_PASSWORD)" -AsPlainText -Force
